@@ -707,3 +707,51 @@ class FitbitLoader:
 
     def get_progress_log(self):
         return list(self.progress_log)
+
+    def get_file_listing(self) -> Dict:
+        """Return info about files and zips in the data folder."""
+        info = {
+            'root_path': str(self.root),
+            'exists': self._exists,
+            'zip_files': [],
+            'data_files': [],
+            'total_items': 0
+        }
+        
+        if not self._exists:
+            return info
+        
+        try:
+            if self._is_dir:
+                # List all files in directory
+                for dirpath, _, files in os.walk(self.root):
+                    for fname in files:
+                        fpath = Path(dirpath) / fname
+                        try:
+                            size = fpath.stat().st_size
+                            if fname.lower().endswith('.zip'):
+                                info['zip_files'].append({
+                                    'name': fname,
+                                    'path': str(fpath),
+                                    'size': size
+                                })
+                            elif fname.lower().endswith(('.json', '.csv')):
+                                info['data_files'].append({
+                                    'name': fname,
+                                    'path': str(fpath),
+                                    'size': size
+                                })
+                        except Exception:
+                            pass
+            elif self._is_zip:
+                # Single zip file
+                info['zip_files'].append({
+                    'name': self.root.name,
+                    'path': str(self.root),
+                    'size': self.root.stat().st_size
+                })
+        except Exception:
+            pass
+        
+        info['total_items'] = len(info['zip_files']) + len(info['data_files'])
+        return info

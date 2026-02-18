@@ -61,8 +61,8 @@ def get_data_availability(dfs: dict) -> dict:
     return info
 
 
-def print_data_summary(dfs: dict, path: str):
-    """Print a formatted summary of loaded data to terminal."""
+def print_data_summary(dfs: dict, path: str, file_info: dict = None):
+    """Print a formatted summary of loaded data and files to terminal."""
     availability = get_data_availability(dfs)
     available_types = [k for k, v in availability.items() if v['available']]
     
@@ -102,6 +102,26 @@ def print_data_summary(dfs: dict, path: str):
         overall_max = max(all_dates)
         date_span = (overall_max - overall_min).days
         print(f"  DATE RANGE:     | {overall_min} to {overall_max} ({date_span} days)")
+    
+    # Show file information if available
+    if file_info and file_info.get('total_items', 0) > 0:
+        print("-"*70)
+        print("FILES IN FOLDER")
+        print("-"*70)
+        
+        if file_info.get('zip_files'):
+            print(f"  ZIP FILES ({len(file_info['zip_files'])}):")
+            for zf in file_info['zip_files']:
+                size_mb = zf['size'] / (1024 * 1024)
+                print(f"    • {zf['name']:50} ({size_mb:>6.1f} MB)")
+        
+        if file_info.get('data_files'):
+            print(f"  DATA FILES ({len(file_info['data_files'])}):")
+            for df in file_info['data_files']:
+                size_kb = df['size'] / 1024
+                print(f"    • {df['name']:50} ({size_kb:>8.1f} KB)")
+        
+        print("-"*70)
     
     print("="*70 + "\n")
 
@@ -165,8 +185,9 @@ def main():
                 pbar.progress(100)
                 status_text.text('Load complete.')
                 st.success('Data loaded (with progress)')
-                # Print terminal summary
-                print_data_summary(dfs, data_path)
+                # Print terminal summary with file info
+                file_info = loader.get_file_listing()
+                print_data_summary(dfs, data_path, file_info)
             except Exception as e:
                 st.error(f'Failed to load data: {e}')
     
@@ -197,8 +218,10 @@ def main():
         if auto_load:
             try:
                 st.session_state['dfs'] = load_master_dataframe(data_path)
-                # Print terminal summary on auto-load
-                print_data_summary(st.session_state['dfs'], data_path)
+                # Print terminal summary on auto-load with file info
+                loader = FitbitLoader(data_path)
+                file_info = loader.get_file_listing()
+                print_data_summary(st.session_state['dfs'], data_path, file_info)
             except Exception:
                 st.session_state['dfs'] = {}
 
