@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fitbit Analytics: Streamlit Blueprint</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #FAFAF9; color: #1C1917; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 320px; max-height: 400px; }
+        /* Custom scrollbar for code blocks */
+        .code-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+        .code-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
+        .code-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+        .tab-active { border-bottom: 2px solid #0EA5E9; color: #0284C7; font-weight: 600; }
+        .tab-inactive { color: #64748B; }
+        .metric-card { transition: all 0.2s; }
+        .metric-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); }
+        /* Chat Bubble Styles */
+        .chat-bubble-user { background-color: #0EA5E9; color: white; border-radius: 12px 12px 0 12px; }
+        .chat-bubble-ai { background-color: #F3F4F6; color: #1F2937; border-radius: 12px 12px 12px 0; border: 1px solid #E5E7EB; }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <!-- Chosen Palette: Warm Neutral Background (#FAFAF9) with Medical/Data Accents. 
+         Primary Blue (#0EA5E9), Activity Orange (#F59E0B), Heart Red (#EF4444), Sleep Indigo (#6366F1), Recovery Emerald (#10B981). -->
+
+    <!-- Application Structure Plan:
+         1. Header: Context & Navigation.
+         2. Main Nav: Tabs for Architecture, Dashboard Mockups, Code Specs.
+         3. Data Architecture: Updated to include "Hybrid Deployment" (Local G: Drive vs. Cloud Upload).
+         4. Dashboard Mockups: UI includes AI Coach and Responsive Mobile View indicators.
+         5. Code Specs: 'app.py' updated to handle logic for Local vs Cloud data loading.
+    -->
+
+    <!-- Visualization & Content Choices:
+         1. Data Pipeline: Added "Deployment Strategy" flow.
+         2. Dashboard Overview: Mobile-responsive grid layout simulation.
+         3. Code Specs: Added `hybrid_loader` logic.
+    -->
+
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <!-- Header -->
+    <header class="bg-white border-b border-stone-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center gap-3">
+                    <div class="bg-sky-500 text-white p-2 rounded-lg font-bold text-xl">F</div>
+                    <div>
+                        <h1 class="text-xl font-bold text-stone-900">Fitbit Analytics Engine</h1>
+                        <p class="text-xs text-stone-500">Streamlit (Python) • Mobile-Ready</p>
+                    </div>
+                </div>
+                <nav class="hidden md:flex space-x-8">
+                    <button onclick="switchSection('architecture')" id="nav-arch" class="text-stone-600 hover:text-stone-900 px-3 py-2 text-sm font-medium">Architecture & Deploy</button>
+                    <button onclick="switchSection('dashboard')" id="nav-dash" class="text-sky-600 border-b-2 border-sky-500 px-3 py-2 text-sm font-medium">Dashboard Prototype</button>
+                    <button onclick="switchSection('code')" id="nav-code" class="text-stone-600 hover:text-stone-900 px-3 py-2 text-sm font-medium">Code Implementation</button>
+                </nav>
+                <div class="md:hidden">
+                    <button class="text-stone-500 hover:text-stone-900">Menu</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+
+        <!-- SECTION 1: DATA ARCHITECTURE & DEPLOYMENT -->
+        <section id="section-architecture" class="hidden space-y-8">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-stone-100">
+                <h2 class="text-2xl font-bold mb-4 text-stone-800">Deployment Strategy (Mobile Access)</h2>
+                <p class="text-stone-600 mb-6">Since the data resides on a local drive (<code class="bg-stone-100 text-rose-600 px-1 py-0.5 rounded text-xs">G:\Mijn Drive</code>), we need a <strong>Hybrid Strategy</strong> to allow mobile access.</p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <!-- Method A: Local Network -->
+                    <div class="bg-sky-50 border border-sky-100 p-4 rounded-lg">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-2xl">🏠</span>
+                            <h3 class="font-bold text-sky-900">Method A: Home Wi-Fi (Recommended)</h3>
+                        </div>
+                        <p class="text-sm text-sky-800 mb-3">Run the app on your PC, view on your phone. Data stays on G: drive.</p>
+                        <div class="bg-white p-3 rounded border border-sky-200 font-mono text-xs text-stone-600">
+                            > streamlit run app.py --server.address 0.0.0.0<br>
+                            <span class="text-stone-400"># Phone URL: http://192.168.1.X:8501</span>
+                        </div>
+                    </div>
+
+                    <!-- Method B: Cloud Fallback -->
+                    <div class="bg-stone-50 border border-stone-200 p-4 rounded-lg">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-2xl">☁️</span>
+                            <h3 class="font-bold text-stone-700">Method B: Streamlit Cloud</h3>
+                        </div>
+                        <p class="text-sm text-stone-600 mb-3">Deploy to the internet. Since Cloud can't read G:, you must <strong>upload the zip</strong> manually.</p>
+                        <div class="bg-white p-3 rounded border border-stone-200 font-mono text-xs text-stone-600">
+                            if not os.path.exists(LOCAL_PATH):<br>
+                            &nbsp;&nbsp;uploaded = st.file_uploader("Upload Zip")
+                        </div>
+                    </div>
+                </div>
+
+                <h2 class="text-2xl font-bold mb-4 text-stone-800 mt-8">Data Pipeline</h2>
+                <!-- Interactive Pipeline Diagram -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                    <div onclick="showArchDetail('ingest')" class="cursor-pointer bg-stone-50 hover:bg-sky-50 border border-stone-200 hover:border-sky-300 p-4 rounded-lg transition text-center group">
+                        <div class="text-2xl mb-2">📦</div>
+                        <h3 class="font-bold text-stone-700 group-hover:text-sky-700">1. Hybrid Ingest</h3>
+                        <p class="text-xs text-stone-500 mt-1">Local G: Drive OR Upload</p>
+                    </div>
+                    <div class="hidden md:flex items-center justify-center text-stone-300">➜</div>
+                    <div onclick="showArchDetail('process')" class="cursor-pointer bg-stone-50 hover:bg-amber-50 border border-stone-200 hover:border-amber-300 p-4 rounded-lg transition text-center group">
+                        <div class="text-2xl mb-2">⚙️</div>
+                        <h3 class="font-bold text-stone-700 group-hover:text-amber-700">2. Processing</h3>
+                        <p class="text-xs text-stone-500 mt-1">Extract & Normalize</p>
+                    </div>
+                    <div class="hidden md:flex items-center justify-center text-stone-300">➜</div>
+                    <div onclick="showArchDetail('store')" class="cursor-pointer bg-stone-50 hover:bg-emerald-50 border border-stone-200 hover:border-emerald-300 p-4 rounded-lg transition text-center group">
+                        <div class="text-2xl mb-2">💾</div>
+                        <h3 class="font-bold text-stone-700 group-hover:text-emerald-700">3. Caching</h3>
+                        <p class="text-xs text-stone-500 mt-1">Parquet Optimization</p>
+                    </div>
+                </div>
+                 <!-- Detail Panel for Pipeline -->
+                <div id="arch-detail-panel" class="bg-stone-50 p-6 rounded-lg border border-stone-200">
+                    <h3 id="arch-title" class="text-lg font-bold text-stone-800 mb-2">Select a stage above to view technical specs.</h3>
+                    <div id="arch-content" class="text-stone-600 text-sm space-y-2">
+                        Click on the boxes above to see the specific Python libraries and logic required.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: DASHBOARD PROTOTYPE (MAIN) -->
+        <section id="section-dashboard" class="block space-y-6">
+            
+            <div class="mb-6 flex justify-between items-end">
+                <div>
+                    <h2 class="text-2xl font-bold text-stone-800">Dashboard Prototype</h2>
+                    <p class="text-stone-600">Simulating mobile-responsive view.</p>
+                </div>
+                <!-- Device Toggle Simulation -->
+                <div class="hidden md:flex bg-stone-100 rounded-lg p-1 border border-stone-200">
+                    <button class="px-3 py-1 text-xs font-bold bg-white text-stone-800 shadow rounded">Desktop</button>
+                    <button class="px-3 py-1 text-xs font-medium text-stone-500 hover:text-stone-800">Mobile</button>
+                </div>
+            </div>
+
+            <!-- Mock Streamlit UI Wrapper -->
+            <div class="flex flex-col lg:flex-row gap-6">
+                
+                <!-- Mock Sidebar -->
+                <div class="w-full lg:w-64 bg-white p-4 rounded-xl border border-stone-200 h-fit space-y-6">
+                    <div>
+                        <label class="block text-xs font-bold text-stone-500 uppercase mb-2">Data Source</label>
+                        <!-- Simulation of Hybrid State -->
+                        <div class="bg-emerald-50 border border-emerald-200 rounded p-2 text-xs text-emerald-800 font-medium mb-2">
+                            ✅ Local: G:\Mijn Drive connected
+                        </div>
+                        <div class="text-[10px] text-stone-400">If G: not found, upload box appears here.</div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-stone-500 uppercase mb-2">Date Range</label>
+                        <div class="space-y-2">
+                            <button class="w-full text-left px-3 py-1 text-sm bg-sky-50 text-sky-700 rounded-md font-medium">Last 30 Days</button>
+                            <button class="w-full text-left px-3 py-1 text-sm text-stone-600 hover:bg-stone-50 rounded-md">Last 90 Days</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mock Main Area -->
+                <div class="flex-1 space-y-6">
+                    
+                    <!-- Tabs -->
+                    <div class="flex border-b border-stone-200 overflow-x-auto">
+                        <button onclick="switchDashTab('overview')" id="tab-overview" class="tab-active px-4 py-2 text-sm font-medium focus:outline-none whitespace-nowrap">Overview</button>
+                        <button onclick="switchDashTab('activity')" id="tab-activity" class="tab-inactive px-4 py-2 text-sm font-medium focus:outline-none whitespace-nowrap">Activity</button>
+                        <button onclick="switchDashTab('ai')" id="tab-ai" class="tab-inactive px-4 py-2 text-sm font-medium focus:outline-none whitespace-nowrap text-purple-600">✨ AI Coach</button>
+                    </div>
+
+                    <!-- DASHBOARD CONTENT: OVERVIEW -->
+                    <div id="dash-overview" class="space-y-6 animate-fade-in">
+                        <!-- KPI Cards -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="metric-card bg-white p-4 rounded-xl border border-stone-100 shadow-sm">
+                                <p class="text-xs text-stone-500 uppercase font-semibold">Avg Steps</p>
+                                <p class="text-2xl font-bold text-stone-800">8,432</p>
+                                <p class="text-xs text-emerald-600 flex items-center mt-1">▲ 12%</p>
+                            </div>
+                            <div class="metric-card bg-white p-4 rounded-xl border border-stone-100 shadow-sm">
+                                <p class="text-xs text-stone-500 uppercase font-semibold">Avg RHR</p>
+                                <p class="text-2xl font-bold text-stone-800">58</p>
+                                <p class="text-xs text-emerald-600 flex items-center mt-1">▼ 2 bpm</p>
+                            </div>
+                            <div class="metric-card bg-white p-4 rounded-xl border border-stone-100 shadow-sm">
+                                <p class="text-xs text-stone-500 uppercase font-semibold">Sleep Score</p>
+                                <p class="text-2xl font-bold text-stone-800">82</p>
+                                <p class="text-xs text-stone-400 flex items-center mt-1">Avg 7h 12m</p>
+                            </div>
+                            <div class="metric-card bg-white p-4 rounded-xl border border-stone-100 shadow-sm">
+                                <p class="text-xs text-stone-500 uppercase font-semibold">Active Mins</p>
+                                <p class="text-2xl font-bold text-stone-800">45</p>
+                                <p class="text-xs text-amber-600 flex items-center mt-1">⚠️ Low</p>
+                            </div>
+                        </div>
+
+                        <!-- Main Chart: Combined Trends -->
+                        <div class="bg-white p-6 rounded-xl border border-stone-200 shadow-sm">
+                            <h3 class="font-bold text-stone-700 mb-4">Activity vs. RHR</h3>
+                            <div class="chart-container">
+                                <canvas id="chart-overview"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                     <!-- DASHBOARD CONTENT: ACTIVITY -->
+                     <div id="dash-activity" class="hidden space-y-6 animate-fade-in">
+                        <div class="bg-white p-6 rounded-xl border border-stone-200 shadow-sm">
+                           <div class="flex justify-between items-center mb-4">
+                               <h3 class="font-bold text-stone-700">Hourly Distribution</h3>
+                           </div>
+                           <div class="chart-container">
+                               <canvas id="chart-activity-hourly"></canvas>
+                           </div>
+                       </div>
+                   </div>
+
+                    <!-- DASHBOARD CONTENT: AI COACH -->
+                    <div id="dash-ai" class="hidden space-y-6 animate-fade-in">
+                        <div class="flex flex-col md:flex-row gap-6 h-[500px]">
+                            <!-- Left: Controls -->
+                            <div class="w-full md:w-1/3 space-y-4">
+                                <div class="bg-white p-6 rounded-xl border border-stone-200 shadow-sm">
+                                    <h3 class="font-bold text-stone-800 mb-4 flex items-center gap-2">
+                                        <span>✨</span> Gemini Actions
+                                    </h3>
+                                    <button class="w-full bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 p-3 rounded-lg text-sm font-medium flex items-center gap-2 mb-2 transition">
+                                        <span>📊</span> Summarize Week
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- Right: Chat Interface -->
+                            <div class="w-full md:w-2/3 bg-white rounded-xl border border-stone-200 shadow-sm flex flex-col overflow-hidden">
+                                <div class="flex-1 p-6 overflow-y-auto space-y-4 bg-stone-50">
+                                    <div class="flex justify-end">
+                                        <div class="chat-bubble-user p-4 max-w-[80%] text-sm shadow-sm">Why am I tired?</div>
+                                    </div>
+                                    <div class="flex justify-start">
+                                        <div class="chat-bubble-ai p-4 max-w-[80%] text-sm shadow-sm">
+                                            <p><strong>✨ Coach Gemini:</strong> Your Deep Sleep is down 30% this week.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="p-4 bg-white border-t border-stone-200">
+                                    <div class="flex gap-2">
+                                        <input type="text" placeholder="Ask AI..." class="flex-1 bg-stone-100 border-stone-200 rounded-lg px-4 py-2 text-sm">
+                                        <button class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium">Send</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: CODE IMPLEMENTATION -->
+        <section id="section-code" class="hidden space-y-8">
+            <div class="bg-white p-6 rounded-xl border border-stone-200 shadow-sm">
+                <h2 class="text-2xl font-bold mb-4 text-stone-800">Project Module Structure</h2>
+                <p class="text-stone-600 mb-6">Code updated for Hybrid Deployment (Local + Cloud Support).</p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 h-96">
+                    <!-- File Tree -->
+                    <div class="bg-stone-50 border border-stone-200 rounded-lg p-4 overflow-y-auto">
+                        <h4 class="font-bold text-stone-700 mb-3 text-xs uppercase tracking-wider">File System</h4>
+                        <ul class="space-y-2 text-sm font-mono text-stone-600">
+                            <li onclick="showCodeSpec('main')" class="cursor-pointer hover:bg-stone-200 p-1 rounded hover:text-sky-600">app.py</li>
+                            <li onclick="showCodeSpec('util_ingest')" class="cursor-pointer hover:bg-stone-200 p-1 pl-6 rounded hover:text-sky-600">data_ingestion.py</li>
+                            <li onclick="showCodeSpec('page_ai')" class="cursor-pointer hover:bg-purple-100 p-1 pl-6 rounded hover:text-purple-600 text-purple-600 font-medium">3_AI_Coach.py</li>
+                        </ul>
+                    </div>
+
+                    <!-- Code Spec Viewer -->
+                    <div class="col-span-2 bg-slate-900 rounded-lg p-6 text-slate-300 font-mono text-xs overflow-y-auto code-scroll relative">
+                        <div id="code-spec-content">
+                            <span class="text-emerald-400">Select a file from the tree to view its specification.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-stone-200 py-6 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 text-center text-xs text-stone-400">
+            Generated Design Blueprint • For use with GitHub Copilot & Streamlit
+        </div>
+    </footer>
+
+    <!-- Logic Script -->
+    <script>
+        // --- State Management ---
+        const state = {
+            currentSection: 'dashboard',
+            currentDashTab: 'overview',
+            charts: {}
+        };
+
+        // --- Navigation Logic ---
+        function switchSection(sectionId) {
+            state.currentSection = sectionId;
+            ['section-architecture', 'section-dashboard', 'section-code'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(`section-${sectionId}`).classList.remove('hidden');
+            
+            ['nav-arch', 'nav-dash', 'nav-code'].forEach(id => {
+                const el = document.getElementById(id);
+                el.className = id === `nav-${sectionId.substring(0,4)}` 
+                    ? "text-sky-600 border-b-2 border-sky-500 px-3 py-2 text-sm font-medium" 
+                    : "text-stone-600 hover:text-stone-900 px-3 py-2 text-sm font-medium";
+            });
+
+            if(sectionId === 'dashboard') {
+                setTimeout(() => { Object.values(state.charts).forEach(chart => chart.resize()); }, 100);
+            }
+        }
+
+        // --- Dashboard Tab Logic ---
+        function switchDashTab(tabId) {
+            state.currentDashTab = tabId;
+            ['overview', 'activity', 'ai'].forEach(id => {
+                document.getElementById(`dash-${id}`).classList.add('hidden');
+                document.getElementById(`tab-${id}`).classList.remove('tab-active');
+                document.getElementById(`tab-${id}`).classList.add('tab-inactive');
+            });
+            document.getElementById(`dash-${tabId}`).classList.remove('hidden');
+            document.getElementById(`tab-${tabId}`).classList.add('tab-active');
+            document.getElementById(`tab-${tabId}`).classList.remove('tab-inactive');
+        }
+
+        // --- Architecture Detail Logic ---
+        function showArchDetail(stage) {
+            const titleEl = document.getElementById('arch-title');
+            const contentEl = document.getElementById('arch-content');
+            
+            if (stage === 'ingest') {
+                titleEl.textContent = "1. Hybrid Ingestion";
+                contentEl.innerHTML = `
+                    <p class="mb-2"><strong class="text-stone-800">Logic:</strong> Check for local G: drive path first.</p>
+                    <div class="bg-white p-2 border rounded font-mono text-xs mb-2">
+                        path = "G:\\Mijn Drive\\Takeout"<br>
+                        if not os.path.exists(path):<br>
+                        &nbsp;&nbsp;# Show Upload Widget for Cloud usage<br>
+                        &nbsp;&nbsp;f = st.file_uploader("Upload Takeout Zip")
+                    </div>
+                `;
+            } else if (stage === 'process') {
+                titleEl.textContent = "2. Processing & Normalization";
+                contentEl.innerHTML = `
+                    <p class="mb-2"><strong class="text-stone-800">Logic:</strong> Python's <code>zipfile</code>.</p>
+                    <p>Extracts only CSVs matching 'Activity' or 'Sleep' patterns to a temporary folder or memory buffer.</p>
+                `;
+            } else if (stage === 'store') {
+                titleEl.textContent = "3. Parquet Caching";
+                contentEl.innerHTML = `
+                    <p class="mb-2"><strong class="text-stone-800">Logic:</strong> <code>@st.cache_data</code></p>
+                    <p>Processed dataframes are saved as Parquet. Subsequent reloads take milliseconds.</p>
+                `;
+            }
+        }
+
+        // --- Code Spec Logic ---
+        const codeSpecs = {
+            'main': `def main():
+    st.set_page_config(layout="wide")
+    
+    # 1. Hybrid Data Loading
+    LOCAL_PATH = "G:\\Mijn Drive\\Takeout"
+    
+    if os.path.exists(LOCAL_PATH):
+        # Method A: Local Network (Desktop)
+        st.sidebar.success("✅ Connected to G: Drive")
+        df_dict = load_local_data(LOCAL_PATH)
+    else:
+        # Method B: Cloud Fallback
+        st.sidebar.warning("☁️ Cloud Mode")
+        uploaded_file = st.sidebar.file_uploader("Upload Takeout Zip", type="zip")
+        if uploaded_file:
+            df_dict = load_uploaded_zip(uploaded_file)
+        else:
+            st.info("Please upload data or run locally on PC.")
+            st.stop()
+            
+    # Render Dashboard...
+    render_overview(df_dict)`,
+            'util_ingest': `def load_local_data(path):
+    """Scan folder for zips, extract to temp, parse."""
+    pass
+
+def load_uploaded_zip(zip_file):
+    """
+    Handle BytesIO from st.file_uploader.
+    Use zipfile.ZipFile(zip_file) directly in memory.
+    """
+    pass`,
+            'page_ai': `def render_ai_coach():
+    st.title("✨ AI Health Coach")
+    # ... Chat UI implementation ...
+    # Uses st.session_state['messages'] to store history`
+        };
+
+        function showCodeSpec(fileKey) {
+            const content = codeSpecs[fileKey] || "// Select a file to view detailed implementation specs.";
+            document.getElementById('code-spec-content').innerHTML = `<pre class="text-xs text-sky-300"># Specification for: ${fileKey}</pre><br><pre>${content}</pre>`;
+        }
+
+        // --- Chart.js Initialization ---
+        function initCharts() {
+            // Overview Chart
+            const ctxOverview = document.getElementById('chart-overview').getContext('2d');
+            state.charts.overview = new Chart(ctxOverview, {
+                type: 'bar',
+                data: {
+                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    datasets: [
+                        { label: 'Steps', data: [8500, 11200, 9400, 4500, 12000, 15000, 7000], backgroundColor: '#bae6fd', yAxisID: 'y' },
+                        { label: 'RHR', data: [62, 60, 59, 61, 58, 57, 59], borderColor: '#EF4444', borderWidth: 2, type: 'line', yAxisID: 'y1' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { position: 'left', grid: { display: false } },
+                        y1: { position: 'right', grid: { display: false }, min: 40, max: 80 }
+                    }
+                }
+            });
+
+            // Activity Hourly
+            const ctxActivity = document.getElementById('chart-activity-hourly').getContext('2d');
+            state.charts.activity = new Chart(ctxActivity, {
+                type: 'line',
+                data: {
+                    labels: ['6AM', '9AM', '12PM', '3PM', '6PM', '9PM'],
+                    datasets: [{
+                        label: 'Avg Steps',
+                        data: [120, 850, 1500, 900, 2100, 400],
+                        borderColor: '#F59E0B',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        window.addEventListener('load', () => {
+            initCharts();
+        });
+
+    </script>
+</body>
+</html>
