@@ -61,6 +61,51 @@ def get_data_availability(dfs: dict) -> dict:
     return info
 
 
+def print_data_summary(dfs: dict, path: str):
+    """Print a formatted summary of loaded data to terminal."""
+    availability = get_data_availability(dfs)
+    available_types = [k for k, v in availability.items() if v['available']]
+    
+    if not available_types:
+        print("\n" + "="*70)
+        print("FITBIT DATA LOAD SUMMARY")
+        print("="*70)
+        print(f"Data Path: {path}")
+        print("STATUS: No data loaded")
+        print("="*70 + "\n")
+        return
+    
+    print("\n" + "="*70)
+    print("FITBIT DATA LOAD SUMMARY")
+    print("="*70)
+    print(f"Data Path: {path}")
+    print(f"Data Types Loaded: {len(available_types)}")
+    print("-"*70)
+    
+    all_dates = []
+    total_records = 0
+    
+    for key in available_types:
+        info = availability[key]
+        total_records += info['count']
+        date_str = ""
+        if info['date_range']:
+            date_str = f" | {info['date_range'][0]} to {info['date_range'][1]}"
+            all_dates.extend(info['date_range'])
+        print(f"  ✓ {key.upper():15} | {info['count']:>8,} records{date_str}")
+    
+    print("-"*70)
+    print(f"  TOTAL:          | {total_records:>8,} records")
+    
+    if all_dates:
+        overall_min = min(all_dates)
+        overall_max = max(all_dates)
+        date_span = (overall_max - overall_min).days
+        print(f"  DATE RANGE:     | {overall_min} to {overall_max} ({date_span} days)")
+    
+    print("="*70 + "\n")
+
+
 def main():
     st.sidebar.title("Data & Settings")
     data_path = st.sidebar.text_input("Data Path", DEFAULT_PATH)
@@ -120,6 +165,8 @@ def main():
                 pbar.progress(100)
                 status_text.text('Load complete.')
                 st.success('Data loaded (with progress)')
+                # Print terminal summary
+                print_data_summary(dfs, data_path)
             except Exception as e:
                 st.error(f'Failed to load data: {e}')
     
@@ -150,6 +197,8 @@ def main():
         if auto_load:
             try:
                 st.session_state['dfs'] = load_master_dataframe(data_path)
+                # Print terminal summary on auto-load
+                print_data_summary(st.session_state['dfs'], data_path)
             except Exception:
                 st.session_state['dfs'] = {}
 
