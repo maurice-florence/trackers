@@ -109,9 +109,12 @@ def main():
 
         daily = d.get('daily', pd.DataFrame())
         if not daily.empty:
-            metrics['avg_steps'] = int(daily.get('steps', pd.Series()).dropna().mean() or 0)
-            metrics['rhr'] = int(daily.get('resting_heart_rate', pd.Series()).dropna().mean() or 0)
-            metrics['sleep_score'] = int(daily.get('sleep_score', pd.Series()).dropna().mean() or 0)
+            avg_steps = daily.get('steps', pd.Series()).dropna().mean()
+            metrics['avg_steps'] = int(avg_steps) if pd.notna(avg_steps) else 0
+            rhr = daily.get('resting_heart_rate', pd.Series()).dropna().mean()
+            metrics['rhr'] = int(rhr) if pd.notna(rhr) else 0
+            sleep_score = daily.get('sleep_score', pd.Series()).dropna().mean()
+            metrics['sleep_score'] = int(sleep_score) if pd.notna(sleep_score) else 0
 
         render_metric_cards(metrics)
 
