@@ -6,7 +6,9 @@ import pandas as pd
 
 from src.ingestion import FitbitLoader
 from src.algorithms import calculate_readiness
-from src.visuals import plot_polar_activity, poincare_plot, sleep_ribbon_plot
+from src.visuals import (plot_polar_activity, poincare_plot, sleep_ribbon_plot, heart_rate_trend, 
+                         steps_trend, resting_heart_rate_trend, sleep_duration_trend, 
+                         activity_heatmap, heart_rate_distribution, ibi_trend)
 from src.components import render_metric_cards
 
 
@@ -122,9 +124,25 @@ def main():
         if not hr.empty:
             st.subheader("Circadian Activity (Polar)")
             fig = plot_polar_activity(hr)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("No heart rate data available to render polar chart.")
+
+        # Additional overview charts
+        col1, col2 = st.columns(2)
+        with col1:
+            hr = d.get('heart_rate', pd.DataFrame())
+            if not hr.empty:
+                st.plotly_chart(heart_rate_distribution(hr), width='stretch')
+        with col2:
+            daily = d.get('daily', pd.DataFrame())
+            if not daily.empty:
+                st.plotly_chart(resting_heart_rate_trend(daily), width='stretch')
+
+        st.divider()
+        hr = d.get('heart_rate', pd.DataFrame())
+        if not hr.empty:
+            st.plotly_chart(heart_rate_trend(hr), width='stretch')
 
     # Sleep Lab
     with tabs[1]:
@@ -132,17 +150,36 @@ def main():
         sleep = d.get('sleep', pd.DataFrame())
         if not sleep.empty:
             fig = sleep_ribbon_plot(sleep)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
+            st.divider()
+            st.plotly_chart(sleep_duration_trend(sleep), width='stretch')
         else:
             st.info("No sleep logs found.")
 
     # Activity tab
     with tabs[2]:
         st.header("Activity")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            steps = d.get('steps', pd.DataFrame())
+            if not steps.empty:
+                st.plotly_chart(steps_trend(steps), width='stretch')
+        with col2:
+            ibi = d.get('ibi', pd.DataFrame())
+            if not ibi.empty:
+                st.plotly_chart(ibi_trend(ibi), width='stretch')
+        
+        st.divider()
+        steps = d.get('steps', pd.DataFrame())
+        if not steps.empty:
+            st.plotly_chart(activity_heatmap(steps), width='stretch')
+        
+        st.divider()
         ibi = d.get('ibi', pd.DataFrame())
         if not ibi.empty:
             fig = poincare_plot(ibi)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("No IBI/HRV data available for Poincaré plot.")
 
