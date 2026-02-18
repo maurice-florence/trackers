@@ -4,6 +4,9 @@ import json
 import re
 import io
 import zipfile
+import time
+import hashlib
+from datetime import datetime
 from pathlib import Path
 import pandas as pd
 from typing import Dict, Iterator, Tuple
@@ -62,6 +65,59 @@ class FitbitLoader:
             except Exception:
                 return
 
+    # --- Parquet cache helpers ---
+    def _cache_dir(self) -> Path:
+        d = Path.cwd() / '.fitbit_cache'
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _cache_file(self, kind: str) -> Path:
+        return self._cache_dir() / f"{kind}.parquet"
+
+    def _latest_source_mtime(self, patterns) -> float:
+        """Return latest modification time (epoch) among matching sources and zip members."""
+        latest = 0.0
+        # directory files and zips
+        if self._is_dir:
+            for dirpath, _, files in os.walk(self.root):
+                for fname in files:
+                    fpath = Path(dirpath) / fname
+                    try:
+                        if any(fnmatch.fnmatch(fname, p) for p in patterns):
+                            latest = max(latest, fpath.stat().st_mtime)
+                    except Exception:
+                        continue
+                # check zip members
+                for zname in fnmatch.filter(files, '*.zip'):
+                    zpath = Path(dirpath) / zname
+                    try:
+                        with zipfile.ZipFile(zpath) as zf:
+                            for member in zf.infolist():
+                                if any(fnmatch.fnmatch(Path(member.filename).name, p) for p in patterns):
+                                    # zinfo.date_time -> tuple (Y,M,D,H,M,S)
+                                    try:
+                                        dt = datetime(*member.date_time)
+                                        latest = max(latest, dt.timestamp())
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        continue
+
+        if self._is_zip:
+            try:
+                with zipfile.ZipFile(self.root) as zf:
+                    for member in zf.infolist():
+                        if any(fnmatch.fnmatch(Path(member.filename).name, p) for p in patterns):
+                            try:
+                                dt = datetime(*member.date_time)
+                                latest = max(latest, dt.timestamp())
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+
+        return latest
+
     def _discover_files(self, pattern: str):
         if not self.root.exists():
             return
@@ -74,6 +130,15 @@ class FitbitLoader:
         return m.group(1) if m else None
 
     def load_heart_rate(self) -> pd.DataFrame:
+        # use parquet cache when available and fresh
+        cache_path = self._cache_file('heart_rate')
+        src_mtime = self._latest_source_mtime(['heart_rate-*.json'])
+        if cache_path.exists() and cache_path.stat().st_mtime >= src_mtime and cache_path.stat().st_size > 0:
+            try:
+                return pd.read_parquet(cache_path)
+            except Exception:
+                pass
+
         rows = []
         for src, content in self._iter_matching_file_contents('heart_rate-*.json'):
             try:
@@ -121,9 +186,22 @@ class FitbitLoader:
         df = df.set_index('dateTime').sort_index()
         if 'bpm' in df.columns:
             df['bpm'] = pd.to_numeric(df['bpm'], errors='coerce')
+        # write parquet cache
+        try:
+            df.to_parquet(cache_path, index=True)
+        except Exception:
+            pass
         return df
 
     def load_steps(self) -> pd.DataFrame:
+        cache_path = self._cache_file('steps')
+        src_mtime = self._latest_source_mtime(['steps-*.json'])
+        if cache_path.exists() and cache_path.stat().st_mtime >= src_mtime and cache_path.stat().st_size > 0:
+            try:
+                return pd.read_parquet(cache_path)
+            except Exception:
+                pass
+
         rows = []
         for src, content in self._iter_matching_file_contents('steps-*.json'):
             try:
@@ -146,10 +224,22 @@ class FitbitLoader:
         df = df.dropna(subset=['dateTime']).set_index('dateTime').sort_index()
         if 'steps' in df.columns:
             df['steps'] = pd.to_numeric(df['steps'], errors='coerce').fillna(0).astype(int)
+        try:
+            df.to_parquet(cache_path, index=True)
+        except Exception:
+            pass
         return df
 
     def load_sleep(self) -> pd.DataFrame:
         # Collect sleep sessions from sleep-*.json
+        cache_path = self._cache_file('sleep')
+        src_mtime = self._latest_source_mtime(['sleep-*.json'])
+        if cache_path.exists() and cache_path.stat().st_mtime >= src_mtime and cache_path.stat().st_size > 0:
+            try:
+                return pd.read_parquet(cache_path)
+            except Exception:
+                pass
+
         sessions = []
         for src, content in self._iter_matching_file_contents('sleep-*.json'):
             try:
@@ -172,6 +262,10 @@ class FitbitLoader:
         df = pd.DataFrame(sessions)
         df['start'] = pd.to_datetime(df['start'], errors='coerce')
         df = df.dropna(subset=['start']).sort_values('start')
+        try:
+            df.to_parquet(cache_path, index=False)
+        except Exception:
+            pass
         return df
 
     def load_daily_summary(self) -> pd.DataFrame:
@@ -197,6 +291,14 @@ class FitbitLoader:
                 except Exception:
                     continue
 
+        cache_path = self._cache_file('daily')
+        src_mtime = self._latest_source_mtime(['*daily*.csv','*Daily Activity*.csv'])
+        if cache_path.exists() and cache_path.stat().st_mtime >= src_mtime and cache_path.stat().st_size > 0:
+            try:
+                return pd.read_parquet(cache_path)
+            except Exception:
+                pass
+
         if not dfs:
             return pd.DataFrame()
         df = pd.concat(dfs, ignore_index=True)
@@ -206,6 +308,10 @@ class FitbitLoader:
                 df[c] = pd.to_datetime(df[c], errors='coerce')
                 df = df.set_index(c)
                 break
+        try:
+            df.to_parquet(cache_path, index=True)
+        except Exception:
+            pass
         return df
 
     def _parse_datetime_series(self, series) -> pd.Series:
