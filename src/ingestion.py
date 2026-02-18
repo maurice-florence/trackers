@@ -118,6 +118,28 @@ class FitbitLoader:
 
         return latest
 
+    def get_cache_status(self) -> Dict[str, Dict]:
+        """Return cache info for supported kinds.
+
+        Returns a dict keyed by kind with values: {'exists', 'size', 'mtime', 'src_mtime', 'fresh'}
+        """
+        kinds = {
+            'heart_rate': ['heart_rate-*.json'],
+            'steps': ['steps-*.json'],
+            'sleep': ['sleep-*.json'],
+            'daily': ['*daily*.csv', '*Daily Activity*.csv']
+        }
+        info = {}
+        for k, patterns in kinds.items():
+            p = self._cache_file(k)
+            exists = p.exists()
+            size = p.stat().st_size if exists else 0
+            mtime = p.stat().st_mtime if exists else None
+            src_mtime = self._latest_source_mtime(patterns)
+            fresh = exists and (mtime is not None and mtime >= src_mtime)
+            info[k] = {'exists': exists, 'size': size, 'mtime': mtime, 'src_mtime': src_mtime, 'fresh': fresh, 'cache_path': str(p)}
+        return info
+
     def _discover_files(self, pattern: str):
         if not self.root.exists():
             return

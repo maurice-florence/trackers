@@ -32,12 +32,57 @@ def main():
         st.sidebar.error(f"Path not found: {data_path}")
 
     with st.sidebar.expander("Load data"):
-        if st.button("Load / Refresh"):
+        show_cache = st.sidebar.checkbox("Show cache status", value=True)
+        use_cache_if_fresh = st.sidebar.checkbox("Use cached when fresh", value=True)
+
+        if show_cache:
             try:
-                st.session_state['dfs'] = load_master_dataframe(data_path)
-                st.success("Data loaded into cache")
+                loader_tmp = FitbitLoader(data_path)
+                status = loader_tmp.get_cache_status()
+                st.sidebar.markdown("**Cache status**")
+                for k, v in status.items():
+                    fresh_mark = '✅' if v['fresh'] else '❌'
+                    mtime = pd.to_datetime(v['mtime'], unit='s') if v['mtime'] else None
+                    st.sidebar.write(f"- **{k}**: {fresh_mark} size={v['size']} mtime={mtime}")
+            except Exception:
+                st.sidebar.write("Could not determine cache status.")
+
+        if st.button("Load / Refresh"):
+            # perform stepwise load with progress
+            try:
+                pbar = st.sidebar.progress(0)
+                status_text = st.sidebar.empty()
+                loader = FitbitLoader(data_path)
+                steps = [
+                    ('heart_rate', loader.load_heart_rate),
+                    ('steps', loader.load_steps),
+                    ('sleep', loader.load_sleep),
+                    ('daily', loader.load_daily_summary),
+                ]
+                total = len(steps)
+                dfs = {}
+                for i, (k, fn) in enumerate(steps, start=1):
+                    status_text.text(f'Loading {k} ({i}/{total})...')
+                    dfs[k] = fn()
+                    pbar.progress(int(i / total * 100))
+
+                # derive ibi
+                hr = dfs.get('heart_rate', pd.DataFrame())
+                if not hr.empty and 'bpm' in hr.columns:
+                    ibi = 60000.0 / hr['bpm'].replace({0: None})
+                    ibi = ibi.dropna()
+                    ibi_df = pd.DataFrame({'ibi': ibi.astype(float)})
+                    ibi_df.index = ibi.index
+                else:
+                    ibi_df = pd.DataFrame()
+
+                dfs['ibi'] = ibi_df
+                st.session_state['dfs'] = dfs
+                pbar.progress(100)
+                status_text.text('Load complete.')
+                st.success('Data loaded (with progress)')
             except Exception as e:
-                st.error(f"Failed to load data: {e}")
+                st.error(f'Failed to load data: {e}')
 
     if 'dfs' not in st.session_state:
         st.session_state['dfs'] = {}
