@@ -18,6 +18,7 @@ class FitbitLoader:
         self._exists = self.root.exists()
         self._is_dir = self.root.is_dir()
         self._is_zip = self.root.is_file() and self.root.suffix.lower() == '.zip'
+        self.progress_log = []
 
     def _iter_matching_file_contents(self, pattern: str) -> Iterator[Tuple[str, bytes]]:
         """Yield tuples of (source_name, bytes_content) for files matching pattern.
@@ -73,6 +74,25 @@ class FitbitLoader:
 
     def _cache_file(self, kind: str) -> Path:
         return self._cache_dir() / f"{kind}.parquet"
+
+    def _processed_metadata_path(self) -> Path:
+        return self._cache_dir() / 'processed_sources.json'
+
+    def _load_processed_metadata(self) -> Dict[str, float]:
+        p = self._processed_metadata_path()
+        if not p.exists():
+            return {}
+        try:
+            return json.loads(p.read_text(encoding='utf-8'))
+        except Exception:
+            return {}
+
+    def _save_processed_metadata(self, meta: Dict[str, float]):
+        p = self._processed_metadata_path()
+        try:
+            p.write_text(json.dumps(meta, indent=2), encoding='utf-8')
+        except Exception:
+            pass
 
     def _latest_source_mtime(self, patterns) -> float:
         """Return latest modification time (epoch) among matching sources and zip members."""
@@ -378,19 +398,299 @@ class FitbitLoader:
                 pass
 
         return parsed
+    def process_all(self, progress_callback=None) -> Dict[str, pd.DataFrame]:
+        """
+        Incrementally process available sources (files and zip archives) and append to parquet caches.
 
-    def process_all(self) -> Dict[str, pd.DataFrame]:
-        hr = self.load_heart_rate()
-        steps = self.load_steps()
-        sleep = self.load_sleep()
-        daily = self.load_daily_summary()
+        If `progress_callback` is provided it will be called with two args: (source_name, message).
+        A running `self.progress_log` list of tuples (timestamp, source, message) is maintained.
+        """
+        # Load metadata of already processed sources
+        processed = self._load_processed_metadata()
 
-        # derive an IBI (ms) approximation from bpm if possible
+        # Prepare holders for newly parsed rows
+        new_hr_rows = []
+        new_steps_rows = []
+        new_sleep_sessions = []
+        new_daily_dfs = []
+
+        def _report(src, msg):
+            ts = time.time()
+            rec = {'ts': ts, 'source': str(src), 'msg': msg}
+            self.progress_log.append(rec)
+            if progress_callback:
+                try:
+                    progress_callback(str(src), msg)
+                except Exception:
+                    pass
+
+        # Collect candidate sources: files matching patterns and zip files
+        sources = []
+        if not self._exists:
+            _report(self.root, 'root_missing')
+            return {'heart_rate': pd.DataFrame(), 'ibi': pd.DataFrame(), 'steps': pd.DataFrame(), 'sleep': pd.DataFrame(), 'daily': pd.DataFrame()}
+
+        if self._is_dir:
+            # plain files
+            for dirpath, _, files in os.walk(self.root):
+                for fname in files:
+                    fpath = Path(dirpath) / fname
+                    if fname.lower().endswith('.zip'):
+                        sources.append(fpath)
+                    else:
+                        # include any file that matches our target patterns
+                        if fnmatch.fnmatch(fname, 'heart_rate-*.json') or fnmatch.fnmatch(fname, 'steps-*.json') or fnmatch.fnmatch(fname, 'sleep-*.json') or fname.lower().endswith('.csv'):
+                            sources.append(fpath)
+        if self._is_zip:
+            sources.append(self.root)
+
+        # Helper to parse json content for heart/steps/sleep
+        def _parse_heart_from_bytes(src_label, content_bytes):
+            try:
+                data = json.loads(content_bytes.decode('utf-8'))
+            except Exception:
+                return []
+            entries = None
+            if isinstance(data, dict) and 'value' in data:
+                entries = data['value']
+            elif isinstance(data, list):
+                entries = data
+            base_date = None
+            try:
+                base_date = self._extract_date_from_filename(Path(src_label))
+            except Exception:
+                base_date = None
+            rows = []
+            for v in entries or []:
+                dt = v.get('dateTime') or v.get('time')
+                bpm = None
+                conf = None
+                if isinstance(v.get('value'), dict):
+                    bpm = v['value'].get('bpm')
+                    conf = v['value'].get('confidence')
+                else:
+                    bpm = v.get('bpm') or (v.get('value') if isinstance(v.get('value'), (int, float)) else None)
+                    conf = v.get('confidence')
+                if dt and len(str(dt)) <= 8 and base_date:
+                    dt = f"{base_date}T{dt}"
+                rows.append({'dateTime': dt, 'bpm': bpm, 'confidence': conf})
+            return rows
+
+        def _parse_steps_from_bytes(src_label, content_bytes):
+            try:
+                data = json.loads(content_bytes.decode('utf-8'))
+            except Exception:
+                return []
+            entries = data.get('value') if isinstance(data, dict) else data
+            base = None
+            try:
+                base = self._extract_date_from_filename(Path(src_label))
+            except Exception:
+                base = None
+            rows = []
+            for v in entries or []:
+                dt = v.get('dateTime') or v.get('time')
+                val = v.get('value') or v.get('steps')
+                if dt and len(str(dt)) <= 8 and base:
+                    dt = f"{base}T{dt}"
+                rows.append({'dateTime': dt, 'steps': val})
+            return rows
+
+        def _parse_sleep_from_bytes(src_label, content_bytes):
+            try:
+                data = json.loads(content_bytes.decode('utf-8'))
+            except Exception:
+                return []
+            sessions = []
+            if isinstance(data, dict):
+                if 'levels' in data:
+                    levels = data['levels']
+                    for rec in levels.get('data', []):
+                        start = rec.get('dateTime') or rec.get('start')
+                        duration = rec.get('seconds') or rec.get('duration')
+                        sessions.append({'start': start, 'duration_s': duration, 'level': rec.get('level') or rec.get('stage')})
+                elif 'sleep' in data:
+                    for s in data['sleep']:
+                        sessions.append({'start': s.get('startTime'), 'duration_s': s.get('durationMillis', 0) / 1000, 'level': None})
+            return sessions
+
+        # Process each source incrementally
+        for src in sources:
+            try:
+                src_key = str(src)
+                try:
+                    src_mtime = Path(src).stat().st_mtime
+                except Exception:
+                    src_mtime = time.time()
+                prev_mtime = processed.get(src_key, 0)
+                if src_mtime <= prev_mtime:
+                    _report(src_key, 'skipped')
+                    continue
+
+                # if zip, iterate members
+                if str(src).lower().endswith('.zip'):
+                    try:
+                        with zipfile.ZipFile(src) as zf:
+                            for member in zf.namelist():
+                                name = Path(member).name
+                                try:
+                                    content = zf.read(member)
+                                except Exception:
+                                    continue
+                                if fnmatch.fnmatch(name, 'heart_rate-*.json'):
+                                    rows = _parse_heart_from_bytes(f"{src}!{member}", content)
+                                    new_hr_rows.extend(rows)
+                                    _report(f"{src}!{member}", f"parsed:{len(rows)}")
+                                elif fnmatch.fnmatch(name, 'steps-*.json'):
+                                    rows = _parse_steps_from_bytes(f"{src}!{member}", content)
+                                    new_steps_rows.extend(rows)
+                                    _report(f"{src}!{member}", f"parsed:{len(rows)}")
+                                elif fnmatch.fnmatch(name, 'sleep-*.json'):
+                                    rows = _parse_sleep_from_bytes(f"{src}!{member}", content)
+                                    new_sleep_sessions.extend(rows)
+                                    _report(f"{src}!{member}", f"parsed_sleep:{len(rows)}")
+                                elif name.lower().endswith('.csv') and ('daily' in name.lower() or 'sleep' in name.lower()):
+                                    try:
+                                        df = pd.read_csv(io.BytesIO(content))
+                                        new_daily_dfs.append(df)
+                                        _report(f"{src}!{member}", f"parsed_daily:{len(df)}")
+                                    except Exception:
+                                        _report(f"{src}!{member}", 'parsed_daily:0')
+                    except Exception as e:
+                        _report(src_key, f'zip_error:{e}')
+                        continue
+                else:
+                    # plain file
+                    name = Path(src).name
+                    try:
+                        content = Path(src).read_bytes()
+                    except Exception:
+                        _report(src_key, 'read_error')
+                        continue
+                    if fnmatch.fnmatch(name, 'heart_rate-*.json'):
+                        rows = _parse_heart_from_bytes(src_key, content)
+                        new_hr_rows.extend(rows)
+                        _report(src_key, f'parsed:{len(rows)}')
+                    elif fnmatch.fnmatch(name, 'steps-*.json'):
+                        rows = _parse_steps_from_bytes(src_key, content)
+                        new_steps_rows.extend(rows)
+                        _report(src_key, f'parsed:{len(rows)}')
+                    elif fnmatch.fnmatch(name, 'sleep-*.json'):
+                        rows = _parse_sleep_from_bytes(src_key, content)
+                        new_sleep_sessions.extend(rows)
+                        _report(src_key, f'parsed_sleep:{len(rows)}')
+                    elif name.lower().endswith('.csv') and ('daily' in name.lower() or 'sleep' in name.lower()):
+                        try:
+                            df = pd.read_csv(io.BytesIO(content))
+                            new_daily_dfs.append(df)
+                            _report(src_key, f'parsed_daily:{len(df)}')
+                        except Exception:
+                            _report(src_key, 'parsed_daily:0')
+
+                # mark processed
+                processed[src_key] = src_mtime
+                self._save_processed_metadata(processed)
+                _report(src_key, 'processed')
+            except Exception as e:
+                _report(src, f'error:{e}')
+
+        # Now merge new rows into caches
+        # Heart rate
+        hr_cache = self._cache_file('heart_rate')
+        try:
+            existing_hr = pd.read_parquet(hr_cache) if hr_cache.exists() and hr_cache.stat().st_size > 0 else pd.DataFrame()
+        except Exception:
+            existing_hr = pd.DataFrame()
+        hr_new_df = pd.DataFrame(new_hr_rows)
+        if not hr_new_df.empty:
+            hr_new_df['dateTime'] = self._parse_datetime_series(hr_new_df['dateTime'])
+            hr_new_df = hr_new_df.dropna(subset=['dateTime']).set_index('dateTime')
+            hr_new_df['bpm'] = pd.to_numeric(hr_new_df['bpm'], errors='coerce')
+            if not existing_hr.empty:
+                merged = pd.concat([existing_hr, hr_new_df]).sort_index()
+            else:
+                merged = hr_new_df.sort_index()
+            try:
+                merged.to_parquet(hr_cache)
+            except Exception:
+                pass
+        else:
+            merged = existing_hr
+
+        # Steps
+        steps_cache = self._cache_file('steps')
+        try:
+            existing_steps = pd.read_parquet(steps_cache) if steps_cache.exists() and steps_cache.stat().st_size > 0 else pd.DataFrame()
+        except Exception:
+            existing_steps = pd.DataFrame()
+        steps_new_df = pd.DataFrame(new_steps_rows)
+        if not steps_new_df.empty:
+            steps_new_df['dateTime'] = pd.to_datetime(steps_new_df['dateTime'], errors='coerce')
+            steps_new_df = steps_new_df.dropna(subset=['dateTime']).set_index('dateTime')
+            steps_new_df['steps'] = pd.to_numeric(steps_new_df['steps'], errors='coerce').fillna(0).astype(int)
+            if not existing_steps.empty:
+                merged_steps = pd.concat([existing_steps, steps_new_df]).sort_index()
+            else:
+                merged_steps = steps_new_df.sort_index()
+            try:
+                merged_steps.to_parquet(steps_cache)
+            except Exception:
+                pass
+        else:
+            merged_steps = existing_steps
+
+        # Sleep
+        sleep_cache = self._cache_file('sleep')
+        try:
+            existing_sleep = pd.read_parquet(sleep_cache) if sleep_cache.exists() and sleep_cache.stat().st_size > 0 else pd.DataFrame()
+        except Exception:
+            existing_sleep = pd.DataFrame()
+        sleep_new_df = pd.DataFrame(new_sleep_sessions)
+        if not sleep_new_df.empty:
+            sleep_new_df['start'] = pd.to_datetime(sleep_new_df['start'], errors='coerce')
+            sleep_new_df = sleep_new_df.dropna(subset=['start']).sort_values('start')
+            if not existing_sleep.empty:
+                merged_sleep = pd.concat([existing_sleep, sleep_new_df], ignore_index=True)
+                merged_sleep = merged_sleep.drop_duplicates().sort_values('start')
+            else:
+                merged_sleep = sleep_new_df
+            try:
+                merged_sleep.to_parquet(sleep_cache, index=False)
+            except Exception:
+                pass
+        else:
+            merged_sleep = existing_sleep
+
+        # Daily
+        daily_cache = self._cache_file('daily')
+        try:
+            existing_daily = pd.read_parquet(daily_cache) if daily_cache.exists() and daily_cache.stat().st_size > 0 else pd.DataFrame()
+        except Exception:
+            existing_daily = pd.DataFrame()
+        if new_daily_dfs:
+            try:
+                concat_daily = pd.concat(new_daily_dfs, ignore_index=True)
+            except Exception:
+                concat_daily = pd.DataFrame()
+            if not concat_daily.empty:
+                if not existing_daily.empty:
+                    merged_daily = pd.concat([existing_daily, concat_daily], ignore_index=True).drop_duplicates()
+                else:
+                    merged_daily = concat_daily
+                try:
+                    merged_daily.to_parquet(daily_cache, index=True)
+                except Exception:
+                    pass
+            else:
+                merged_daily = existing_daily
+        else:
+            merged_daily = existing_daily
+
+        # derive IBI
         ibi_df = pd.DataFrame()
         try:
-            if not hr.empty and 'bpm' in hr.columns:
-                # Convert bpm to IBI in milliseconds (approx): ibi_ms = 60000 / bpm
-                ibi = 60000.0 / hr['bpm'].replace({0: None})
+            if not merged.empty and 'bpm' in merged.columns:
+                ibi = 60000.0 / merged['bpm'].replace({0: None})
                 ibi = ibi.dropna()
                 ibi_df = pd.DataFrame({'ibi': ibi.astype(float)})
                 ibi_df.index = ibi.index
@@ -398,9 +698,12 @@ class FitbitLoader:
             ibi_df = pd.DataFrame()
 
         return {
-            'heart_rate': hr,
+            'heart_rate': merged,
             'ibi': ibi_df,
-            'steps': steps,
-            'sleep': sleep,
-            'daily': daily,
+            'steps': merged_steps,
+            'sleep': merged_sleep,
+            'daily': merged_daily,
         }
+
+    def get_progress_log(self):
+        return list(self.progress_log)
