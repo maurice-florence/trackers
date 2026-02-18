@@ -24,6 +24,43 @@ def load_master_dataframe(path: str):
     return loader.process_all()
 
 
+def get_data_availability(dfs: dict) -> dict:
+    """Analyze loaded dataframes and return availability info."""
+    info = {
+        'heart_rate': {'available': False, 'count': 0, 'date_range': None},
+        'steps': {'available': False, 'count': 0, 'date_range': None},
+        'sleep': {'available': False, 'count': 0, 'date_range': None},
+        'daily': {'available': False, 'count': 0, 'date_range': None},
+        'ibi': {'available': False, 'count': 0, 'date_range': None},
+    }
+    
+    for key in info.keys():
+        df = dfs.get(key, pd.DataFrame())
+        if df is not None and not df.empty:
+            info[key]['available'] = True
+            info[key]['count'] = len(df)
+            try:
+                if df.index.name in ['dateTime', 'start'] or isinstance(df.index, pd.DatetimeIndex):
+                    idx = df.index
+                else:
+                    # Try first datetime column
+                    for col in df.columns:
+                        if pd.api.types.is_datetime64_any_dtype(df[col]):
+                            idx = df[col]
+                            break
+                    else:
+                        idx = None
+                
+                if idx is not None:
+                    min_date = pd.to_datetime(idx.min()).date()
+                    max_date = pd.to_datetime(idx.max()).date()
+                    info[key]['date_range'] = (min_date, max_date)
+            except Exception:
+                pass
+    
+    return info
+
+
 def main():
     st.sidebar.title("Data & Settings")
     data_path = st.sidebar.text_input("Data Path", DEFAULT_PATH)
@@ -85,8 +122,30 @@ def main():
                 st.success('Data loaded (with progress)')
             except Exception as e:
                 st.error(f'Failed to load data: {e}')
-
-    if 'dfs' not in st.session_state:
+    
+    # Show data availability summary
+    with st.sidebar.expander("Data Summary", expanded=True):
+        d = st.session_state.get('dfs', {})
+        if d and any(not df.empty if isinstance(df, pd.DataFrame) else False for df in d.values()):
+            availability = get_data_availability(d)
+            for key, info in availability.items():
+                if info['available']:
+                    date_range_str = f"{info['date_range'][0]} to {info['date_range'][1]}" if info['date_range'] else "Unknown range"
+                    st.write(f"✅ **{key.replace('_', ' ').title()}**: {info['count']} records ({date_range_str})")
+            
+            # Overall date range
+            all_dates = []
+            for key, info in availability.items():
+                if info['available'] and info['date_range']:
+                    all_dates.extend(info['date_range'])
+            if all_dates:
+                overall_min = min(all_dates)
+                overall_max = max(all_dates)
+                st.divider()
+                st.write(f"📅 **Overall Date Range**: {overall_min} to {overall_max}")
+                st.write("✅ **Status**: All available data is being displayed")
+        else:
+            st.write("No data loaded. Click 'Load / Refresh' to load data.")
         st.session_state['dfs'] = {}
         if auto_load:
             try:
@@ -103,6 +162,29 @@ def main():
     # Overview
     with tabs[0]:
         st.header("Overview")
+        
+        # Show data availability at top
+        availability = get_data_availability(d)
+        if any(info['available'] for info in availability.values()):
+            col1, col2, col3 = st.columns(3)
+            data_types_available = [k.replace('_', ' ').title() for k, v in availability.items() if v['available']]
+            
+            with col1:
+                st.metric("Data Types Available", len(data_types_available))
+            with col2:
+                total_records = sum(v['count'] for v in availability.values() if v['available'])
+                st.metric("Total Records", f"{total_records:,}")
+            with col3:
+                all_dates = []
+                for key, info in availability.items():
+                    if info['available'] and info['date_range']:
+                        all_dates.extend(info['date_range'])
+                if all_dates:
+                    date_span = (max(all_dates) - min(all_dates)).days
+                    st.metric("Date Span", f"{date_span} days")
+            
+            st.info(f"📊 Data loaded: {', '.join(data_types_available)} — All available data is displayed")
+            st.divider()
         metrics = {
             'avg_steps': 0,
             'rhr': None,
