@@ -10,7 +10,7 @@ from src.visuals import plot_polar_activity, poincare_plot, sleep_ribbon_plot
 from src.components import render_metric_cards
 
 
-DEFAULT_PATH = r"G:\Mijn Drive\Data Analyse\00_DATA-Life_Analysis\fitbit-data"
+DEFAULT_PATH = r"G:\Mijn Drive\Takeout"
 
 
 st.set_page_config(page_title="Fitbit Analytics", layout="wide")
@@ -26,6 +26,7 @@ def main():
     st.sidebar.title("Data & Settings")
     data_path = st.sidebar.text_input("Data Path", DEFAULT_PATH)
     use_local = st.sidebar.checkbox("Use local path", value=True)
+    auto_load = st.sidebar.checkbox("Auto-load on start", value=False, help="If enabled the app will load data on startup (may take time)")
 
     if use_local and not Path(data_path).exists():
         st.sidebar.error(f"Path not found: {data_path}")
@@ -39,10 +40,12 @@ def main():
                 st.error(f"Failed to load data: {e}")
 
     if 'dfs' not in st.session_state:
-        try:
-            st.session_state['dfs'] = load_master_dataframe(data_path)
-        except Exception:
-            st.session_state['dfs'] = {}
+        st.session_state['dfs'] = {}
+        if auto_load:
+            try:
+                st.session_state['dfs'] = load_master_dataframe(data_path)
+            except Exception:
+                st.session_state['dfs'] = {}
 
     d = st.session_state['dfs']
 
